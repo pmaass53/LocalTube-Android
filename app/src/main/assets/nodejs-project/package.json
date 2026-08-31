@@ -1,0 +1,9 @@
+{
+  "dependencies": {
+    "nodejs-mobile-react-native": "^18.20.4",
+    "youtubei.js": "^17.2.0"
+  },
+  "allowScripts": {
+    "nodejs-mobile-react-native@18.20.4": true
+  }
+}

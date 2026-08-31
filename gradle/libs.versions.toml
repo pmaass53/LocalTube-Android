@@ -1,0 +1,27 @@
+[versions]
+agp = "9.3.2"
+junit = "4.13.2"
+junitVersion = "1.3.0"
+espressoCore = "3.7.0"
+appcompat = "1.7.1"
+material = "1.14.0"
+activityKtx = "1.13.0"
+constraintlayout = "2.2.1"
+media3Session = "1.10.1"
+chaquopy = "17.0.0"
+
+[libraries]
+chaquopy-gradle = { group = "com.chaquo.python", name = "gradle", version.ref = "chaquopy" }
+junit = { group = "junit", name = "junit", version.ref = "junit" }
+ext-junit = { group = "androidx.test.ext", name = "junit", version.ref = "junitVersion" }
+espresso-core = { group = "androidx.test.espresso", name = "espresso-core", version.ref = "espressoCore" }
+appcompat = { group = "androidx.appcompat", name = "appcompat", version.ref = "appcompat" }
+material = { group = "com.google.android.material", name = "material", version.ref = "material" }
+activity-ktx = { group = "androidx.activity", name = "activity-ktx", version.ref = "activityKtx" }
+constraintlayout = { group = "androidx.constraintlayout", name = "constraintlayout", version.ref = "constraintlayout" }
+media3-session = { group = "androidx.media3", name = "media3-session", version.ref = "media3Session" }
+
+[plugins]
+android-application = { id = "com.android.application", version.ref = "agp" }
+chaquopy-python = { id = "com.chaquo.python", version.ref = "chaquopy" }
+
