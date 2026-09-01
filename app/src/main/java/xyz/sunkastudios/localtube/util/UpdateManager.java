@@ -114,9 +114,32 @@ public class UpdateManager {
         activity.runOnUiThread(() -> new AlertDialog.Builder(activity)
                 .setTitle("Update Available")
                 .setMessage("A new version (" + latestVersion + ") is available.\n\nChanges:\n" + body)
-                .setPositiveButton("Update", (dialog, which) -> downloadAndInstallApk(activity, downloadUrl))
+                .setPositiveButton("Update", (dialog, which) -> {
+                    if (checkInstallPermission(activity)) {
+                        downloadAndInstallApk(activity, downloadUrl);
+                    }
+                })
                 .setNegativeButton("Later", null)
                 .show());
+    }
+
+    private static boolean checkInstallPermission(Activity activity) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            if (!activity.getPackageManager().canRequestPackageInstalls()) {
+                new AlertDialog.Builder(activity)
+                        .setTitle("Permission Required")
+                        .setMessage("LocalTube needs permission to install updates. Please enable 'Install unknown apps' for LocalTube in the next screen.")
+                        .setPositiveButton("Settings", (dialog, which) -> {
+                            Intent intent = new Intent(android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES)
+                                    .setData(Uri.parse("package:" + activity.getPackageName()));
+                            activity.startActivity(intent);
+                        })
+                        .setNegativeButton("Cancel", null)
+                        .show();
+                return false;
+            }
+        }
+        return true;
     }
 
     private static void downloadAndInstallApk(Activity activity, String downloadUrl) {
@@ -178,21 +201,26 @@ public class UpdateManager {
     }
 
     private static void installApk(Context context, File apkFile) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            if (!context.getPackageManager().canRequestPackageInstalls()) {
+                new AlertDialog.Builder(context)
+                        .setTitle("Authorization Required")
+                        .setMessage("Update downloaded! Please authorize LocalTube to install apps, then click the update notification or try again.")
+                        .setPositiveButton("Authorize", (dialog, which) -> {
+                            context.startActivity(new Intent(android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES)
+                                    .setData(Uri.parse("package:" + context.getPackageName())));
+                        })
+                        .setNegativeButton("Cancel", null)
+                        .show();
+                return;
+            }
+        }
+
         Uri apkUri = FileProvider.getUriForFile(context, context.getPackageName() + ".fileprovider", apkFile);
         Intent intent = new Intent(Intent.ACTION_VIEW);
         intent.setDataAndType(apkUri, "application/vnd.android.package-archive");
         intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-        
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            if (!context.getPackageManager().canRequestPackageInstalls()) {
-                context.startActivity(new Intent(android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES)
-                        .setData(Uri.parse("package:" + context.getPackageName())));
-                Toast.makeText(context, "Please allow unknown app sources and try again", Toast.LENGTH_LONG).show();
-                return;
-            }
-        }
-        
         context.startActivity(intent);
     }
 }
