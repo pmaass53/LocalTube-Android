@@ -1,6 +1,7 @@
 package xyz.sunkastudios.localtube.activity;
 
 import android.content.Intent;
+import android.content.pm.PackageInfo;
 import android.graphics.Color;
 import android.graphics.drawable.ColorDrawable;
 import android.os.Bundle;
@@ -46,8 +47,20 @@ public class SettingsActivity extends AppCompatActivity {
         setupSpinners();
         setupNavigation();
         setupColorAutoPreview();
+        setupVersionInfo();
 
         btnSave.setOnClickListener(v -> saveSettings());
+    }
+
+    private void setupVersionInfo() {
+        try {
+            PackageInfo pInfo = getPackageManager().getPackageInfo(getPackageName(), 0);
+            String version = pInfo.versionName;
+            TextView versionText = findViewById(R.id.text_version);
+            if (versionText != null) {
+                versionText.setText("Version " + version);
+            }
+        } catch (Exception ignored) {}
     }
 
     private void bindViews() {

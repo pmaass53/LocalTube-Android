@@ -419,6 +419,17 @@
                     app:layout_constraintTop_toTopOf="parent" />
             </androidx.constraintlayout.widget.ConstraintLayout>
 
+            <TextView
+                android:id="@+id/text_version"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="32dp"
+                android:layout_marginBottom="16dp"
+                android:gravity="center"
+                android:text="Version 0.0.0"
+                android:textColor="#666666"
+                android:textSize="12sp" />
+
         </LinearLayout>
     </ScrollView>
 

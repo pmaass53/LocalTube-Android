@@ -91,7 +91,10 @@ public class UpdateManager {
             PackageInfo pInfo = context.getPackageManager().getPackageInfo(context.getPackageName(), 0);
             String currentVersion = pInfo.versionName;
             
+            Log.i(TAG, "Comparing versions: current=" + currentVersion + ", latest=" + latestVersion);
+            
             if (currentVersion == null) return true;
+            if (currentVersion.equals(latestVersion)) return false;
             
             String[] currentParts = currentVersion.split("\\.");
             String[] latestParts = latestVersion.split("\\.");
