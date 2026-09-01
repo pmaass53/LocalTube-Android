@@ -61,7 +61,7 @@ public class UpdateManager {
                 try {
                     String jsonData = Objects.requireNonNull(response.body()).string();
                     JSONObject release = new JSONObject(jsonData);
-                    String latestVersion = release.getString("tag_name").replace("v", "");
+                    String latestVersion = release.getString("tag_name").replace("v", "").trim();
                     String body = release.optString("body", "");
                     
                     JSONArray assets = release.getJSONArray("assets");
