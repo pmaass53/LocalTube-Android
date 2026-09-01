@@ -32,6 +32,7 @@ import xyz.sunkastudios.localtube.util.ConfigManager;
 import xyz.sunkastudios.localtube.util.FileLoader;
 import xyz.sunkastudios.localtube.util.NetworkManager;
 import xyz.sunkastudios.localtube.util.UIUtil;
+import xyz.sunkastudios.localtube.util.UpdateManager;
 
 public class HomeActivity extends AppCompatActivity {
     private final List<VideoItem> videoList = new ArrayList<>();
@@ -68,6 +69,24 @@ public class HomeActivity extends AppCompatActivity {
         });
 
         loadInitialVideos();
+        checkForUpdates();
+    }
+
+    private void checkForUpdates() {
+        UpdateManager.checkForUpdates(this, new UpdateManager.UpdateCallback() {
+            @Override
+            public void onUpdateAvailable(String latestVersion, String downloadUrl, String body) {
+                UpdateManager.showUpdateDialog(HomeActivity.this, latestVersion, downloadUrl, body);
+            }
+
+            @Override
+            public void onNoUpdate() {}
+
+            @Override
+            public void onError(Exception e) {
+                Log.e("HomeActivity", "Update check failed", e);
+            }
+        });
     }
 
     private void setupSearch() {

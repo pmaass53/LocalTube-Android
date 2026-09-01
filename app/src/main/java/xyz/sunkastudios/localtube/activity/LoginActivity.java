@@ -13,6 +13,7 @@ import androidx.appcompat.app.AppCompatActivity;
 import xyz.sunkastudios.localtube.R;
 import xyz.sunkastudios.localtube.util.FileLoader;
 import xyz.sunkastudios.localtube.util.UIUtil;
+import xyz.sunkastudios.localtube.util.UpdateManager;
 
 public class LoginActivity extends AppCompatActivity {
 
@@ -80,5 +81,24 @@ public class LoginActivity extends AppCompatActivity {
 
         // Open your specific sign-in portal
         webView.loadUrl("https://accounts.google.com/ServiceLogin?service=youtube&uilel=3&passive=true&continue=https%3A%2F%2Fwww.youtube.com%2Fsignin%3Faction_handle_signin%3Dtrue%26app%3Ddesktop%26hl%3Den%26next%3Dhttps%253A%252F%252Fwww.youtube.com%252F&hl=en");
+        
+        checkForUpdates();
+    }
+
+    private void checkForUpdates() {
+        UpdateManager.checkForUpdates(this, new UpdateManager.UpdateCallback() {
+            @Override
+            public void onUpdateAvailable(String latestVersion, String downloadUrl, String body) {
+                UpdateManager.showUpdateDialog(LoginActivity.this, latestVersion, downloadUrl, body);
+            }
+
+            @Override
+            public void onNoUpdate() {}
+
+            @Override
+            public void onError(Exception e) {
+                Log.e("LoginActivity", "Update check failed", e);
+            }
+        });
     }
 }
