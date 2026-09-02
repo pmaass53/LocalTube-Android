@@ -24,6 +24,7 @@ import xyz.sunkastudios.localtube.VideoAdapter;
 import xyz.sunkastudios.localtube.VideoFeed;
 import xyz.sunkastudios.localtube.VideoItem;
 import xyz.sunkastudios.localtube.engine.YoutubeEngine;
+import xyz.sunkastudios.localtube.util.DownloadProgressManager;
 import xyz.sunkastudios.localtube.util.UIUtil;
 
 public class PlaylistActivity extends AppCompatActivity implements VideoAdapter.VideoAdapterListener {
@@ -47,6 +48,8 @@ public class PlaylistActivity extends AppCompatActivity implements VideoAdapter.
 
         adapter = new VideoAdapter(videoList, this);
         recyclerView.setAdapter(adapter);
+
+        DownloadProgressManager.attachProgressView(this, this, findViewById(R.id.layout_download_progress));
 
         SwipeRefreshLayout swipeRefreshLayout = findViewById(R.id.swipeRefreshLayout);
         swipeRefreshLayout.setOnRefreshListener(this::loadVideos);

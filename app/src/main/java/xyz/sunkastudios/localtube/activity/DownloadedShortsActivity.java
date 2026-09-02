@@ -248,6 +248,7 @@ public class DownloadedShortsActivity extends AppCompatActivity {
                                 .setInputData(inputData)
                                 .addTag(workTag)
                                 .addTag("batch_download_group")
+                                .addTag("download_task")
                                 .addTag(currentSessionTag)
                                 .build();
 

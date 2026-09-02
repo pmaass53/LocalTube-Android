@@ -158,8 +158,29 @@ public class AnimeDownloaderActivity extends AppCompatActivity {
                             android.R.layout.simple_spinner_item, qualityOptions);
                     adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
                     spinnerQuality.setAdapter(adapter);
+                    
                     if (!qualityOptions.isEmpty()) {
                         startDownloadBtn.setEnabled(true);
+
+                        // Set default selection based on preferred quality
+                        int preferredHeight = ConfigManager.getInt("preferred_quality");
+                        int selection = 0;
+                        for (int i = 0; i < qualityOptions.size(); i++) {
+                            String q = qualityOptions.get(i).quality.toLowerCase();
+                            int height = 0;
+                            try {
+                                String hStr = q.replaceAll("[^0-9]", "");
+                                if (!hStr.isEmpty()) height = Integer.parseInt(hStr);
+                            } catch (Exception ignored) {}
+
+                            if (height > 0 && height <= preferredHeight) {
+                                selection = i;
+                                // qualityOptions are likely sorted from high to low or low to high.
+                                // If they are sorted high to low, the first one <= pref is the best.
+                                break;
+                            }
+                        }
+                        spinnerQuality.setSelection(selection);
                     } else {
                         Toast.makeText(this, "No streams found for this mode", Toast.LENGTH_SHORT).show();
                     }
@@ -175,15 +196,6 @@ public class AnimeDownloaderActivity extends AppCompatActivity {
     }
 
     private void startDownload(AnimeStreamOption option) {
-        startDownloadBtn.setVisibility(View.GONE);
-        spinnerMode.setEnabled(false);
-        spinnerQuality.setEnabled(false);
-
-        progressBar.setVisibility(View.VISIBLE);
-        percentText.setVisibility(View.VISIBLE);
-        infoText.setVisibility(View.VISIBLE);
-        statusText.setText("Downloading Anime...");
-
         // Reuse DownloadWorker logic but pass different params
         Data inputData = new Data.Builder()
                 .putString("video_url", option.url)
@@ -194,43 +206,15 @@ public class AnimeDownloaderActivity extends AppCompatActivity {
                 .putBoolean("is_anime", true)
                 .build();
 
-        // I'll update DownloadWorker to handle "headers_json" and "is_anime"
         OneTimeWorkRequest downloadWork = new OneTimeWorkRequest.Builder(xyz.sunkastudios.localtube.DownloadWorker.class)
                 .setInputData(inputData)
                 .addTag("download_anime_" + animeId + "_" + episodeId)
+                .addTag("download_task")
                 .build();
 
-        activeWorkId = downloadWork.getId();
-        WorkManager workManager = WorkManager.getInstance(this);
-        workManager.enqueue(downloadWork);
-
-        workManager.getWorkInfoByIdLiveData(activeWorkId)
-                .observe(this, workInfo -> {
-                    if (workInfo == null) return;
-
-                    int progress = workInfo.getProgress().getInt("progress", 0);
-                    long totalSize = workInfo.getProgress().getLong("totalSize", 0);
-                    long totalDownloaded = workInfo.getProgress().getLong("totalDownloaded", 0);
-
-                    progressBar.setProgress(progress);
-                    percentText.setText(String.format(Locale.getDefault(), "%d%%", progress));
-
-                    double downloadedMb = totalDownloaded / 1048576.0;
-                    double totalMb = totalSize / 1048576.0;
-                    infoText.setText(String.format(Locale.getDefault(), "%.1f / %.1f MB", downloadedMb, totalMb));
-
-                    if (workInfo.getState().isFinished()) {
-                        if (workInfo.getState() == WorkInfo.State.SUCCEEDED) {
-                            Toast.makeText(this, "Anime download complete!", Toast.LENGTH_SHORT).show();
-                            startActivity(new Intent(this, DownloadsActivity.class));
-                            finish();
-                        } else if (workInfo.getState() == WorkInfo.State.FAILED) {
-                            String err = workInfo.getOutputData().getString("error");
-                            Toast.makeText(this, "Failed: " + err, Toast.LENGTH_LONG).show();
-                            finish();
-                        }
-                    }
-                });
+        WorkManager.getInstance(this).enqueue(downloadWork);
+        Toast.makeText(this, "Anime download started in background", Toast.LENGTH_SHORT).show();
+        finish();
     }
 
     @Override

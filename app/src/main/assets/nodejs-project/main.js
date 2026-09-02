@@ -186,12 +186,27 @@ async function init(cookiesPathOrString = null) {
                 Innertube = youtubei.Innertube;
                 UniversalCache = youtubei.UniversalCache;
             }
-            ytClient = await Innertube.create({ cookie: parseCookies(finalCookiesPath), cache: new UniversalCache(false) });
+            // Configuration for better mobile support
+            ytClient = await Innertube.create({
+                cookie: parseCookies(finalCookiesPath),
+                cache: new UniversalCache(false),
+                generate_session_locally: true
+            });
+
+            // Set the evaluator manually to avoid "To decipher URLs, you must provide your own JavaScript evaluator"
+            // Node.js mobile environment sometimes doesn't expose it correctly to youtubei.js
+            if (ytClient.session.player) {
+                ytClient.session.player.eval = (js) => {
+                    return eval(js);
+                };
+            }
+
             continuationToken = null;
             seenVideoIds.clear();
             isInitialized = true;
             return { success: true };
         } catch (err) {
+            console.error('[Node] Initialization failed:', err);
             isInitialized = false;
             throw err;
         }
@@ -263,6 +278,16 @@ async function getShortDetails(videoId) {
         return { videoId, title: '', author: '', channelId: '', viewCount: 0, likeCount: 0, duration: 0, description: '', thumbnailUrl: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`, url: `https://www.youtube.com/shorts/${videoId}` };
     }
 }
+
+// Global error handling to prevent process crashes
+process.on('uncaughtException', (err) => {
+    console.error('[Node] Uncaught Exception:', err.message);
+    if (err.stack) console.error(err.stack);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('[Node] Unhandled Rejection:', reason);
+});
 
 let NativeBridge = null;
 if (typeof process._linkedBinding === 'function') { try { NativeBridge = process._linkedBinding('rn_bridge'); } catch (e) {} }

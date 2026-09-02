@@ -43,6 +43,7 @@ import xyz.sunkastudios.localtube.ShortItem;
 import xyz.sunkastudios.localtube.ShortsAdapter;
 import xyz.sunkastudios.localtube.engine.YoutubeEngine;
 import xyz.sunkastudios.localtube.util.ConfigManager;
+import xyz.sunkastudios.localtube.util.DownloadProgressManager;
 import xyz.sunkastudios.localtube.util.DownloadStore;
 import xyz.sunkastudios.localtube.util.DownloadUtil;
 import xyz.sunkastudios.localtube.util.NetworkManager;
@@ -108,6 +109,8 @@ public class ShortsActivity extends AppCompatActivity {
 
         findViewById(R.id.bottomMenuBar).setBackground(new ColorDrawable(ConfigManager.getColor("navbar_background_color", "#777777")));
         ((android.widget.ImageButton)findViewById(R.id.btnDownloadedShorts)).setColorFilter(UIUtil.getAccentColor());
+
+        DownloadProgressManager.attachProgressView(this, this, findViewById(R.id.layout_download_progress));
 
         // Add snapping behavior (one item at a time)
         PagerSnapHelper snapHelper = new PagerSnapHelper();
@@ -371,9 +374,16 @@ public class ShortsActivity extends AppCompatActivity {
             if (item.getVideoMimeType() != null) {
                 builder.setMimeType(item.getVideoMimeType());
             }
-            if (item.getResolvedAudioUrl() != null) {
+            
+            String audioUri = item.getResolvedAudioUrl();
+            if (audioUri == null && audio_delay != 0) {
+                // Force sync for single stream short by using same URL as audio
+                audioUri = item.getResolvedVideoUrl();
+            }
+
+            if (audioUri != null) {
                 Bundle extras = new Bundle();
-                extras.putString("audio_uri", item.getResolvedAudioUrl());
+                extras.putString("audio_uri", audioUri);
                 extras.putLong("audio_start_ms", audioOffset);
                 if (item.getAudioMimeType() != null) {
                     extras.putString("audio_mime_type", item.getAudioMimeType());
@@ -386,6 +396,9 @@ public class ShortsActivity extends AppCompatActivity {
                 shortUrl = "https://www.youtube.com/shorts/" + item.getVideoId();
             }
             builder.setUri(shortUrl);
+            
+            // For un-resolved URLs that will be resolved by the Service,
+            // the Service handles the delay based on metadata or global config.
         }
         return builder.build();
     }

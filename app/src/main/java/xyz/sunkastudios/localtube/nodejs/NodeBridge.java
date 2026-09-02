@@ -28,6 +28,7 @@ public class NodeBridge {
 
     private static final List<NodeMessageListener> listeners = new CopyOnWriteArrayList<>();
     private static boolean isNodeReady = false;
+    private static boolean isStarting = false;
     private static final List<Runnable> pendingMessages = new ArrayList<>();
 
     public static void addListener(NodeMessageListener listener) {
@@ -47,6 +48,7 @@ public class NodeBridge {
         Log.d(TAG, "Message from Node [" + channel + "]: " + message);
         if ("ready".equals(channel)) {
             synchronized (pendingMessages) {
+                isStarting = false;
                 isNodeReady = true;
                 for (Runnable r : pendingMessages) {
                     r.run();
@@ -66,7 +68,10 @@ public class NodeBridge {
     /**
      * Starts the Node.js project from assets in a background thread.
      */
-    public static void startNode(Context context) {
+    public static synchronized void startNode(Context context) {
+        if (isNodeReady || isStarting) return;
+        isStarting = true;
+        
         new Thread(() -> {
             try {
                 Log.i(TAG, "Preparing Node.js environment...");

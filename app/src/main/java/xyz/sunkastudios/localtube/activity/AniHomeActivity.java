@@ -28,6 +28,7 @@ import xyz.sunkastudios.localtube.VideoAdapter;
 import xyz.sunkastudios.localtube.VideoItem;
 import xyz.sunkastudios.localtube.engine.PythonEngine;
 import xyz.sunkastudios.localtube.util.ConfigManager;
+import xyz.sunkastudios.localtube.util.DownloadProgressManager;
 import xyz.sunkastudios.localtube.util.NetworkManager;
 import xyz.sunkastudios.localtube.util.PrefetchManager;
 import xyz.sunkastudios.localtube.util.UIUtil;
@@ -54,6 +55,8 @@ public class AniHomeActivity extends AppCompatActivity {
 
         findViewById(R.id.bottomMenuBar).setBackground(new ColorDrawable(ConfigManager.getColor("navbar_background_color", "#777777")));
         findViewById(R.id.btnActionSearch).setBackgroundTintList(android.content.res.ColorStateList.valueOf(UIUtil.getAccentColor()));
+
+        DownloadProgressManager.attachProgressView(this, this, findViewById(R.id.layout_download_progress));
 
         setupNavigation();
 

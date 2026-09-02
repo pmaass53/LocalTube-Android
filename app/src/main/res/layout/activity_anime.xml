@@ -72,7 +72,7 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintTop_toBottomOf="@id/episodesLabel"
-        app:layout_constraintBottom_toTopOf="@id/bottomMenuBar">
+        app:layout_constraintBottom_toTopOf="@id/layout_download_progress">
 
         <androidx.recyclerview.widget.RecyclerView
             android:id="@+id/recyclerView"
@@ -82,6 +82,15 @@
             android:clipToPadding="false" />
     </androidx.swiperefreshlayout.widget.SwipeRefreshLayout>
 
+    <include
+        android:id="@+id/layout_download_progress"
+        layout="@layout/layout_download_progress"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        app:layout_constraintBottom_toTopOf="@id/bottomMenuBar"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent" />
+
     <!-- BOTTOM NAVIGATION BAR -->
     <com.google.android.material.divider.MaterialDivider
         android:id="@+id/bottomBarBorder"
@@ -89,7 +98,7 @@
         android:layout_height="wrap_content"
         app:dividerThickness="2dp"
         app:dividerColor="@android:color/black"
-        app:layout_constraintBottom_toTopOf="@id/bottomMenuBar"
+        app:layout_constraintBottom_toTopOf="@id/layout_download_progress"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent" />
     <LinearLayout

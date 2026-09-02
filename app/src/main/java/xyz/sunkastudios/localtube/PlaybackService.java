@@ -212,6 +212,8 @@ public class PlaybackService extends MediaSessionService {
                     }
                     final int finalSIndex = sIndex;
                     new Handler(Looper.getMainLooper()).post(() -> {
+                        player.setRepeatMode(Player.REPEAT_MODE_OFF);
+                        player.setShuffleModeEnabled(false);
                         player.setMediaItems(mediaItems, finalSIndex, 0);
                         player.prepare();
                         player.setPlayWhenReady(true);
@@ -246,6 +248,8 @@ public class PlaybackService extends MediaSessionService {
             }
 
             new Handler(Looper.getMainLooper()).post(() -> {
+                player.setRepeatMode(Player.REPEAT_MODE_OFF);
+                player.setShuffleModeEnabled(false);
                 player.setMediaItems(mediaItems, startIndex, 0);
                 player.prepare();
                 player.setPlayWhenReady(true);
@@ -562,22 +566,29 @@ public class PlaybackService extends MediaSessionService {
             }
 
             List<FormatItem> formats = metaData.getFormats();
+            int preferredHeight = ConfigManager.getInt("preferred_quality");
+
             FormatItem bestVideo = formats.stream()
                     .filter(f -> f.isVideoOnly() && f.isDirectStream())
+                    .filter(f -> f.getHeight() <= preferredHeight)
                     .max(Comparator.comparingInt(FormatItem::getHeight))
                     .orElse(null);
+            
+            if (bestVideo == null) {
+                bestVideo = formats.stream()
+                        .filter(f -> f.isVideoOnly() && f.isDirectStream())
+                        .max(Comparator.comparingInt(FormatItem::getHeight))
+                        .orElse(null);
+            }
 
-            FormatItem bestAudio = formats.stream()
-                    .filter(f -> f.isAudioOnly() && f.isDirectStream())
-                    .max(Comparator.comparingDouble(FormatItem::getTbr))
-                    .orElse(null);
+            FormatItem bestAudio = YoutubeEngine.findBestAudio(formats);
 
             long audio_delay = ConfigManager.getInt("audio_delay");
             long videoOffset = audio_delay > 0 ? audio_delay : 0;
             long audioOffset = audio_delay < 0 ? -audio_delay : 0;
 
             if (bestVideo != null && bestAudio != null) {
-                Log.d("PlaybackService", "Merging separate audio/video streams for: " + metaData.getId());
+                Log.d("PlaybackService", "Merging separate audio/video streams for: " + metaData.getId() + " with delay: " + audio_delay + " (Target: " + preferredHeight + "p)");
                 MediaItem vItem = buildMediaItem(bestVideo.getUrl(), inferMimeType(bestVideo, true), videoOffset);
                 MediaItem aItem = buildMediaItem(bestAudio.getUrl(), inferMimeType(bestAudio, false), audioOffset);
 
@@ -590,13 +601,28 @@ public class PlaybackService extends MediaSessionService {
 
             FormatItem bestCombined = formats.stream()
                     .filter(f -> f.isCombined() && f.isDirectStream())
+                    .filter(f -> f.getHeight() <= preferredHeight)
                     .max(Comparator.comparingInt(FormatItem::getHeight))
                     .orElse(null);
+            
+            if (bestCombined == null) {
+                bestCombined = formats.stream()
+                        .filter(f -> f.isCombined() && f.isDirectStream())
+                        .max(Comparator.comparingInt(FormatItem::getHeight))
+                        .orElse(null);
+            }
 
             if (bestCombined != null) {
-                Log.d("PlaybackService", "Using combined stream for: " + metaData.getId());
-                MediaItem item = buildMediaItem(bestCombined.getUrl(), inferMimeType(bestCombined, true), videoOffset);
-                return baseFactory.createMediaSource(item);
+                Log.d("PlaybackService", "Using combined stream for: " + metaData.getId() + " with delay: " + audio_delay);
+                MediaItem vItem = buildMediaItem(bestCombined.getUrl(), inferMimeType(bestCombined, true), videoOffset);
+                
+                if (audio_delay != 0) {
+                    // Force sync even on combined stream by merging it with itself using offsets
+                    MediaItem aItem = buildMediaItem(bestCombined.getUrl(), inferMimeType(bestCombined, false), audioOffset);
+                    return new MergingMediaSource(true, true, baseFactory.createMediaSource(vItem), baseFactory.createMediaSource(aItem));
+                }
+                
+                return baseFactory.createMediaSource(vItem);
             }
 
             Log.w("PlaybackService", "No suitable formats found, falling back to original item");

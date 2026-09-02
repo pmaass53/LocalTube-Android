@@ -30,6 +30,7 @@ import xyz.sunkastudios.localtube.R;
 import xyz.sunkastudios.localtube.DownloadWorker;
 import xyz.sunkastudios.localtube.VideoMetaData;
 import xyz.sunkastudios.localtube.engine.YoutubeEngine;
+import xyz.sunkastudios.localtube.util.ConfigManager;
 import xyz.sunkastudios.localtube.util.NetworkManager;
 import xyz.sunkastudios.localtube.util.UIUtil;
 
@@ -132,10 +133,30 @@ public class DownloaderActivity extends AppCompatActivity {
                     videoAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
                     spinnerVideo.setAdapter(videoAdapter);
 
+                    // Set default selection based on preferred quality
+                    int preferredHeight = ConfigManager.getInt("preferred_quality");
+                    int selection = 0;
+                    for (int i = 0; i < videoFormats.size(); i++) {
+                        if (videoFormats.get(i).getHeight() <= preferredHeight) {
+                            selection = i;
+                            break;
+                        }
+                    }
+                    spinnerVideo.setSelection(selection);
+
                     ArrayAdapter<FormatItem> audioAdapter = new ArrayAdapter<>(this, 
                             android.R.layout.simple_spinner_item, audioFormats);
                     audioAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
                     spinnerAudio.setAdapter(audioAdapter);
+
+                    // Set default audio selection based on language preference
+                    FormatItem bestAudio = YoutubeEngine.findBestAudio(allFormats);
+                    if (bestAudio != null) {
+                        int audioIdx = audioFormats.indexOf(bestAudio);
+                        if (audioIdx != -1) {
+                            spinnerAudio.setSelection(audioIdx);
+                        }
+                    }
 
                     startDownloadBtn.setEnabled(true);
                 });
@@ -161,61 +182,12 @@ public class DownloaderActivity extends AppCompatActivity {
         OneTimeWorkRequest downloadWork = new OneTimeWorkRequest.Builder(DownloadWorker.class)
                 .setInputData(inputData)
                 .addTag("download_" + id)
+                .addTag("download_task")
                 .build();
 
-        activeWorkId = downloadWork.getId();
-
-        WorkManager workManager = WorkManager.getInstance(this);
-        workManager.enqueue(downloadWork);
-
-        workManager.getWorkInfoByIdLiveData(activeWorkId)
-                .observe(this, workInfo -> {
-                    if (workInfo == null) return;
-
-                    int progress = workInfo.getProgress().getInt("progress", 0);
-                    long totalSize = workInfo.getProgress().getLong("totalSize", 0);
-                    long totalDownloaded = workInfo.getProgress().getLong("totalDownloaded", 0);
-
-                    if (progress == -1) {
-                        progressBar.setIndeterminate(true);
-                    } else {
-                        progressBar.setIndeterminate(false);
-                        progressBar.setProgress(progress);
-                        percentText.setText(String.format(Locale.getDefault(), "%d%%", progress));
-                        percentText.setVisibility(View.VISIBLE);
-                    }
-
-                    if (totalDownloaded > 0) {
-                        double downloadedMb = totalDownloaded / 1048576.0;
-                        if (totalSize > 0) {
-                            double totalMb = totalSize / 1048576.0;
-                            infoText.setText(String.format(Locale.getDefault(), "%.1f / %.1f MB", downloadedMb, totalMb));
-                        } else {
-                            infoText.setText(String.format(Locale.getDefault(), "%.1f MB downloaded", downloadedMb));
-                        }
-                        infoText.setVisibility(View.VISIBLE);
-                    }
-
-                    WorkInfo.State state = workInfo.getState();
-                    if (state.isFinished()) {
-                        workManager.getWorkInfoByIdLiveData(activeWorkId).removeObservers(this);
-
-                        if (state == WorkInfo.State.SUCCEEDED) {
-                            Toast.makeText(this, "Download complete!", Toast.LENGTH_SHORT).show();
-                            Intent intent = new Intent(DownloaderActivity.this, DownloadsActivity.class);
-                            startActivity(intent);
-                            finish();
-                        } else if (state == WorkInfo.State.CANCELLED) {
-                            Toast.makeText(this, "Download cancelled.", Toast.LENGTH_SHORT).show();
-                            finish();
-                        } else if (state == WorkInfo.State.FAILED) {
-                            String errorMessage = workInfo.getOutputData().getString("error");
-                            if (errorMessage == null) errorMessage = "Unknown error";
-                            Toast.makeText(this, "Download failed: " + errorMessage, Toast.LENGTH_LONG).show();
-                            finish();
-                        }
-                    }
-                });
+        WorkManager.getInstance(this).enqueue(downloadWork);
+        Toast.makeText(this, "Download started in background", Toast.LENGTH_SHORT).show();
+        finish();
     }
 
     @Override

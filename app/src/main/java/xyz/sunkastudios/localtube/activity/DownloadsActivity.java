@@ -34,6 +34,7 @@ import xyz.sunkastudios.localtube.DownloadListItem;
 import xyz.sunkastudios.localtube.DownloadedVideo;
 import xyz.sunkastudios.localtube.R;
 import xyz.sunkastudios.localtube.util.ConfigManager;
+import xyz.sunkastudios.localtube.util.DownloadProgressManager;
 import xyz.sunkastudios.localtube.util.DownloadStore;
 import xyz.sunkastudios.localtube.util.UIUtil;
 
@@ -65,6 +66,8 @@ public class DownloadsActivity extends AppCompatActivity implements DownloadAdap
         findViewById(R.id.bottomMenuBar).setBackground(new ColorDrawable(ConfigManager.getColor("navbar_background_color", "#777777")));
         TextView banner = findViewById(R.id.home_text_banner);
         if (banner != null) banner.setTextColor(UIUtil.getAccentColor());
+
+        DownloadProgressManager.attachProgressView(this, this, findViewById(R.id.layout_download_progress));
 
         findViewById(R.id.btnYoutubeHome).setOnClickListener(v -> {
             Intent intent = new Intent(DownloadsActivity.this, HomeActivity.class);

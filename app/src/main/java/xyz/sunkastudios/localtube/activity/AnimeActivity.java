@@ -33,6 +33,7 @@ import xyz.sunkastudios.localtube.VideoAdapter;
 import xyz.sunkastudios.localtube.VideoItem;
 import xyz.sunkastudios.localtube.engine.PythonEngine;
 import xyz.sunkastudios.localtube.util.ConfigManager;
+import xyz.sunkastudios.localtube.util.DownloadProgressManager;
 import xyz.sunkastudios.localtube.util.NetworkManager;
 import xyz.sunkastudios.localtube.util.UIUtil;
 
@@ -71,6 +72,9 @@ public class AnimeActivity extends AppCompatActivity implements VideoAdapter.Vid
         recyclerView.setAdapter(adapter);
 
         findViewById(R.id.bottomMenuBar).setBackground(new ColorDrawable(ConfigManager.getColor("navbar_background_color", "#777777")));
+        
+        DownloadProgressManager.attachProgressView(this, this, findViewById(R.id.layout_download_progress));
+
         setupNavigation();
 
         SwipeRefreshLayout swipeRefreshLayout = findViewById(R.id.swipeRefreshLayout);
@@ -171,35 +175,57 @@ public class AnimeActivity extends AppCompatActivity implements VideoAdapter.Vid
         String lang = ConfigManager.getString("anime_mode");
         if (lang.isEmpty()) lang = "sub";
 
-        String finalLang = lang;
+        final String finalLang = lang;
         executorService.execute(() -> {
             try {
-                // Returns JSON string with url and headers
-                String jsonResult = PythonEngine.getStreamUrl(animeId, video.getId(), finalLang);
-                Log.d(TAG, "Stream result: " + jsonResult);
+                // Fetch all available streams instead of a single URL
+                String jsonResult = PythonEngine.getAvailableStreams(animeId, video.getId(), finalLang);
+                Log.d(TAG, "Streams result: " + jsonResult);
 
                 runOnUiThread(() -> {
                     if (isFinishing() || isDestroyed()) return;
                     progressBar.setVisibility(View.GONE);
                     
                     try {
-                        if (jsonResult == null || jsonResult.isEmpty()) {
-                            Toast.makeText(this, "Failed to resolve stream", Toast.LENGTH_SHORT).show();
+                        org.json.JSONArray array = new org.json.JSONArray(jsonResult);
+                        if (array.length() == 0) {
+                            Toast.makeText(this, "No playable streams found", Toast.LENGTH_SHORT).show();
                             return;
                         }
 
-                        JSONObject res = new JSONObject(jsonResult);
-                        if (res.has("error")) {
-                            Toast.makeText(this, res.getString("error"), Toast.LENGTH_LONG).show();
-                            return;
+                        int preferredHeight = ConfigManager.getInt("preferred_quality");
+                        JSONObject bestStream = null;
+                        int bestHeight = 0;
+
+                        // Find the best stream that doesn't exceed preferred quality
+                        for (int i = 0; i < array.length(); i++) {
+                            JSONObject stream = array.getJSONObject(i);
+                            String q = stream.optString("quality", "").toLowerCase();
+                            int height = 0;
+                            try {
+                                String hStr = q.replaceAll("[^0-9]", "");
+                                if (!hStr.isEmpty()) height = Integer.parseInt(hStr);
+                            } catch (Exception ignored) {}
+
+                            if (height > 0 && height <= preferredHeight) {
+                                if (height > bestHeight) {
+                                    bestHeight = height;
+                                    bestStream = stream;
+                                }
+                            }
                         }
 
-                        String streamUrl = res.getString("url");
-                        JSONObject headersJson = res.optJSONObject("headers");
+                        // Fallback: pick the first one (usually highest or lowest depending on provider)
+                        if (bestStream == null) {
+                            bestStream = array.getJSONObject(0);
+                        }
+
+                        String streamUrl = bestStream.getString("url");
+                        JSONObject headersJson = bestStream.optJSONObject("headers");
 
                         Intent intent = new Intent(this, PlayerActivity.class);
                         intent.putExtra("online", true);
-                        intent.putExtra("is_direct", true); // Flag for PlayerActivity
+                        intent.putExtra("is_direct", true);
                         intent.putExtra("video_uri", streamUrl);
                         intent.putExtra("video_id", animeId + "_ep" + video.getId());
                         
@@ -216,7 +242,7 @@ public class AnimeActivity extends AppCompatActivity implements VideoAdapter.Vid
                         startActivity(intent);
 
                     } catch (Exception e) {
-                        Log.e(TAG, "JSON parsing error during stream resolution", e);
+                        Log.e(TAG, "Error selecting best stream", e);
                         Toast.makeText(this, "Stream resolution error", Toast.LENGTH_SHORT).show();
                     }
                 });

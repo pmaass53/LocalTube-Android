@@ -156,6 +156,11 @@ public class PlayerActivity extends AppCompatActivity {
             return;
         }
 
+        // RESET: Ensure normal playback defaults (fixes leak from Shorts)
+        if (player != null) {
+            player.setRepeatMode(Player.REPEAT_MODE_OFF);
+        }
+
         // IMPROVED: Check if already playing this content to prevent restart on screen off/on
         if (player.getMediaItemCount() > 0) {
             MediaItem currentItem = player.getCurrentMediaItem();
@@ -196,6 +201,13 @@ public class PlayerActivity extends AppCompatActivity {
             return;
         }
 
+        // IMPROVED: If it's a local playlist, skip loading the single video 
+        // to let PlaybackService handle the ACTION_PREPARE_PLAYLIST task.
+        if (!isOnline && intent.hasExtra("playlist_video_uris")) {
+            Log.d(TAG, "Local playlist detected, skipping single-video load to let Service handle it.");
+            return;
+        }
+
         if (isOnline) {
             if (videoUri.contains("list=")) {
                 loadOnlinePlaylist(videoUri, videoId);
@@ -219,7 +231,7 @@ public class PlayerActivity extends AppCompatActivity {
             builder.setMediaMetadata(new MediaMetadata.Builder().setExtras(headers).build());
         }
 
-        play(builder.build());
+        play(mergeItems(builder.build(), null));
     }
 
     @OptIn(markerClass = UnstableApi.class)
@@ -270,6 +282,8 @@ public class PlayerActivity extends AppCompatActivity {
                     }
                 }
 
+                Log.d(TAG, "Loading online playlist. Count: " + mediaItems.size());
+                player.setRepeatMode(Player.REPEAT_MODE_OFF);
                 player.setMediaItems(mediaItems, startIndex, 0);
                 player.prepare();
                 player.setPlayWhenReady(true);
@@ -303,6 +317,12 @@ public class PlayerActivity extends AppCompatActivity {
     @OptIn(markerClass = UnstableApi.class)
     private void play(MediaItem mediaItem) {
         if (mediaItem != null && player != null) {
+            Log.d(TAG, "Starting playback. Resetting repeat/shuffle modes.");
+            player.setRepeatMode(Player.REPEAT_MODE_OFF);
+            // We might want to keep shuffle mode if the user explicitly enabled it, 
+            // but for a single video it doesn't matter much.
+            // For now, let's keep it consistent with playlists.
+            
             player.setMediaItem(mediaItem);
             player.prepare();
             player.setPlayWhenReady(true);
@@ -315,19 +335,28 @@ public class PlayerActivity extends AppCompatActivity {
     private MediaItem mergeItems(MediaItem videoItem, MediaItem audioItem) {
         if (videoItem == null) return null;
         long audio_delay = ConfigManager.getInt("audio_delay");
+        
+        // If no delay is needed and we only have one stream, return it as is
+        if (audio_delay == 0 && audioItem == null) return videoItem;
+
         long videoOffset = audio_delay > 0 ? audio_delay : 0;
         long audioOffset = audio_delay < 0 ? -audio_delay : 0;
 
         MediaItem clippedVideo = applyClipping(videoItem, videoOffset);
-        if (audioItem == null) return clippedVideo;
-        MediaItem clippedAudio = applyClipping(audioItem, audioOffset);
+        
+        // If we only have one file (like a direct anime link or local single-stream mp4),
+        // we can still sync by merging the same file as both video and audio with different offsets.
+        MediaItem targetAudio = (audioItem != null) ? audioItem : videoItem;
+        MediaItem clippedAudio = applyClipping(targetAudio, audioOffset);
 
         Bundle extras = new Bundle();
         if (clippedAudio.localConfiguration != null) {
             extras.putString("audio_uri", clippedAudio.localConfiguration.uri.toString());
             if (clippedAudio.localConfiguration.mimeType != null) extras.putString("audio_mime_type", clippedAudio.localConfiguration.mimeType);
         }
-        extras.putLong("audio_start_ms", clippedAudio.clippingConfiguration.startPositionMs);
+        if (clippedAudio.clippingConfiguration != null) {
+            extras.putLong("audio_start_ms", clippedAudio.clippingConfiguration.startPositionMs);
+        }
 
         return clippedVideo.buildUpon()
                 .setMediaMetadata(new MediaMetadata.Builder().setExtras(extras).build())
@@ -364,10 +393,7 @@ public class PlayerActivity extends AppCompatActivity {
                     .orElse(null);
         }
 
-        xyz.sunkastudios.localtube.FormatItem bestAudio = formats.stream()
-                .filter(f -> f.isAudioOnly() && f.isDirectStream())
-                .max(Comparator.comparingDouble(xyz.sunkastudios.localtube.FormatItem::getTbr))
-                .orElse(null);
+        xyz.sunkastudios.localtube.FormatItem bestAudio = YoutubeEngine.findBestAudio(formats);
 
         if (bestVideo != null && bestAudio != null) {
             MediaItem videoItem = new MediaItem.Builder().setUri(bestVideo.getUrl()).setMimeType(inferMimeType(bestVideo, true)).setMediaId(videoId != null ? videoId : bestVideo.getUrl()).build();
@@ -414,6 +440,15 @@ public class PlayerActivity extends AppCompatActivity {
             return uri.getQueryParameter("list");
         } catch (Exception e) {
             return null;
+        }
+    }
+
+    @Override
+    protected void onNewIntent(@androidx.annotation.NonNull Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        if (player != null) {
+            handleIntent(intent);
         }
     }
 

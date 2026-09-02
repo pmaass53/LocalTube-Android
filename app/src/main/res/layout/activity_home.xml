@@ -76,9 +76,19 @@
         android:layout_height="wrap_content"
         app:dividerThickness="2dp"
         app:dividerColor="@android:color/black"
+        app:layout_constraintBottom_toTopOf="@id/layout_download_progress"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent" />
+
+    <include
+        android:id="@+id/layout_download_progress"
+        layout="@layout/layout_download_progress"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
         app:layout_constraintBottom_toTopOf="@id/bottomMenuBar"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent" />
+
     <LinearLayout
         android:id="@+id/bottomMenuBar"
         android:layout_width="0dp"

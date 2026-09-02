@@ -8,6 +8,7 @@ import android.os.Bundle;
 import android.text.Editable;
 import android.text.TextWatcher;
 import android.view.View;
+import android.webkit.CookieManager;
 import android.widget.ArrayAdapter;
 import android.widget.EditText;
 import android.widget.Spinner;
@@ -15,6 +16,7 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.annotation.OptIn;
+import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.media3.common.util.UnstableApi;
 
@@ -24,8 +26,11 @@ import com.google.android.material.materialswitch.MaterialSwitch;
 import java.util.Arrays;
 import java.util.List;
 
+import xyz.sunkastudios.localtube.MainActivity;
 import xyz.sunkastudios.localtube.R;
 import xyz.sunkastudios.localtube.util.ConfigManager;
+import xyz.sunkastudios.localtube.util.DownloadProgressManager;
+import xyz.sunkastudios.localtube.util.FileLoader;
 import xyz.sunkastudios.localtube.util.UIUtil;
 
 public class SettingsActivity extends AppCompatActivity {
@@ -33,7 +38,7 @@ public class SettingsActivity extends AppCompatActivity {
     private Spinner spinnerAnimeMode, spinnerBufferPolicy, spinnerPreferredQuality;
     private MaterialSwitch switchAutoHistory;
     private TextView headerGeneral, headerYoutube, headerAnime;
-    private MaterialButton btnSave;
+    private MaterialButton btnSave, btnClearCookies;
 
     @OptIn(markerClass = UnstableApi.class)
     @Override
@@ -49,7 +54,31 @@ public class SettingsActivity extends AppCompatActivity {
         setupColorAutoPreview();
         setupVersionInfo();
 
+        DownloadProgressManager.attachProgressView(this, this, findViewById(R.id.layout_download_progress));
+
         btnSave.setOnClickListener(v -> saveSettings());
+        btnClearCookies.setOnClickListener(v -> clearCookies());
+    }
+
+    private void clearCookies() {
+        new AlertDialog.Builder(this)
+                .setTitle("Sign Out")
+                .setMessage("This will delete your YouTube login cookies. You will need to sign in again to see your recommendations.\n\nContinue?")
+                .setPositiveButton("Sign Out", (dialog, which) -> {
+                    FileLoader.delete(getApplicationContext(), "cookies.txt");
+                    FileLoader.delete(getApplicationContext(), "homepage.txt");
+                    CookieManager.getInstance().removeAllCookies(null);
+                    CookieManager.getInstance().flush();
+                    
+                    Toast.makeText(this, "Cookies Cleared", Toast.LENGTH_SHORT).show();
+                    
+                    Intent intent = new Intent(this, MainActivity.class);
+                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
+                    startActivity(intent);
+                    finish();
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
     }
 
     private void setupVersionInfo() {
@@ -78,6 +107,7 @@ public class SettingsActivity extends AppCompatActivity {
         spinnerPreferredQuality = findViewById(R.id.spinner_preferred_quality);
 
         switchAutoHistory = findViewById(R.id.switch_auto_history);
+        btnClearCookies = findViewById(R.id.btn_clear_cookies);
         
         btnSave = findViewById(R.id.btn_save);
         headerGeneral = findViewById(R.id.header_general);

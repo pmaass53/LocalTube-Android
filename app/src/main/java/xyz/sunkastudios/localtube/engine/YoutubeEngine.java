@@ -18,6 +18,7 @@ import org.json.JSONObject;
 import java.io.File;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -27,6 +28,7 @@ import android.system.ErrnoException;
 
 import kotlin.Unit;
 import kotlin.jvm.functions.Function3;
+import xyz.sunkastudios.localtube.FormatItem;
 import xyz.sunkastudios.localtube.VideoFeed;
 import xyz.sunkastudios.localtube.VideoItem;
 import xyz.sunkastudios.localtube.VideoMetaData;
@@ -143,8 +145,12 @@ public class YoutubeEngine {
         if (!initialized) init(context);
         YoutubeDLRequest request = new YoutubeDLRequest(cleanYoutubeUrl(videoUrl));
         request.addOption("-4");
+        int preferredHeight = ConfigManager.getInt("preferred_quality");
+        String defaultLang = ConfigManager.getString("default_language");
+        if (defaultLang == null || defaultLang.isEmpty()) defaultLang = "en";
+
         if (videoUrl.contains("/shorts/")) {
-            request.addOption("-f", "bestvideo[height<=1080]+bestaudio[language*=en]/bestaudio/best");
+            request.addOption("-f", "bestvideo[height<=" + preferredHeight + "]+bestaudio[language*=" + defaultLang + "]/bestaudio/best");
         } else {
             request.addOption("--extractor-args", "youtube:include_dash_manifest");
         }
@@ -152,7 +158,10 @@ public class YoutubeEngine {
         request.addOption("--no-playlist");
         request.addOption("--no-check-certificates");
         try {
+            long startTime = System.currentTimeMillis();
             YoutubeDLResponse response = executeSafe(request);
+            Log.d("LocalTube-Engine", "yt-dlp format extraction took: " + (System.currentTimeMillis() - startTime) + "ms");
+            
             String json = response.getOut();
             if (json == null || json.trim().isEmpty()) return null;
             List<VideoMetaData> entries = new ArrayList<>();
@@ -229,7 +238,13 @@ public class YoutubeEngine {
         YoutubeDLRequest request = new YoutubeDLRequest(cleanYoutubeUrl(videoUrl));
         request.addOption("--get-url");
         request.addOption("--no-playlist");
-        request.addOption("-f", "bestvideo[height<=1080]+bestaudio/best");
+        
+        int preferredHeight = ConfigManager.getInt("preferred_quality");
+        String defaultLang = ConfigManager.getString("default_language");
+        if (defaultLang == null || defaultLang.isEmpty()) defaultLang = "en";
+
+        request.addOption("-f", "bestvideo[height<=" + preferredHeight + "]+bestaudio[language*=" + defaultLang + "]/bestaudio/best");
+        
         try {
             YoutubeDLResponse response = executeSafe(request);
             String out = response.getOut();
@@ -248,7 +263,7 @@ public class YoutubeEngine {
         try {
             executeSafe(request);
         } catch (Exception e) {
-            Log.e("YoutubeDL", "markMatched() error", e);
+            Log.e("YoutubeDL", "markWatched() error", e);
         }
     }
 
@@ -269,7 +284,10 @@ public class YoutubeEngine {
         } catch (ErrnoException ignored) {}
 
         try {
-            return YoutubeDL.getInstance().execute(request, videoId, callback);
+            long start = System.currentTimeMillis();
+            YoutubeDLResponse resp = YoutubeDL.getInstance().execute(request, videoId, callback);
+            Log.v("LocalTube-Engine", "Native yt-dlp execution took: " + (System.currentTimeMillis() - start) + "ms");
+            return resp;
         } finally {
             try {
                 if (oldPythonPath != null) Os.setenv("PYTHONPATH", oldPythonPath, true);
@@ -324,6 +342,49 @@ public class YoutubeEngine {
         NodeBridge.addListener(listener);
         NodeBridge.sendMessage("getShorts", reqId, null);
     }
+    public static FormatItem findBestAudio(List<FormatItem> formats) {
+        if (formats == null || formats.isEmpty()) return null;
+
+        String preferredLang = ConfigManager.getString("default_language");
+        if (preferredLang == null || preferredLang.isEmpty()) preferredLang = "en";
+        final String finalLang = preferredLang.toLowerCase();
+
+        // 1. Try to find audio matching preferred language with highest bitrate
+        FormatItem bestMatch = formats.stream()
+                .filter(f -> f.isAudioOnly() && f.isDirectStream())
+                .filter(f -> f.getLanguage() != null && f.getLanguage().toLowerCase().startsWith(finalLang))
+                .max(Comparator.comparingDouble(FormatItem::getTbr))
+                .orElse(null);
+
+        // 2. If preferred language not found, try 'en' as fallback
+        if (bestMatch == null && !finalLang.equals("en")) {
+            bestMatch = formats.stream()
+                    .filter(f -> f.isAudioOnly() && f.isDirectStream())
+                    .filter(f -> f.getLanguage() != null && f.getLanguage().toLowerCase().startsWith("en"))
+                    .max(Comparator.comparingDouble(FormatItem::getTbr))
+                    .orElse(null);
+        }
+
+        // 3. Try to find any track that contains "original" in its note (common for multi-language videos)
+        if (bestMatch == null) {
+            bestMatch = formats.stream()
+                    .filter(f -> f.isAudioOnly() && f.isDirectStream())
+                    .filter(f -> f.getFormatNote() != null && f.getFormatNote().toLowerCase().contains("original"))
+                    .max(Comparator.comparingDouble(FormatItem::getTbr))
+                    .orElse(null);
+        }
+
+        // 4. Last resort: pick the highest bitrate regardless of language
+        if (bestMatch == null) {
+            bestMatch = formats.stream()
+                    .filter(f -> f.isAudioOnly() && f.isDirectStream())
+                    .max(Comparator.comparingDouble(FormatItem::getTbr))
+                    .orElse(null);
+        }
+
+        return bestMatch;
+    }
+
     private static String cleanYoutubeUrl(String url) {
         try {
             if (!url.contains("list=RDGME")) return url;

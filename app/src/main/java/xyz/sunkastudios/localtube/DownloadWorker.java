@@ -66,11 +66,15 @@ public class DownloadWorker extends Worker {
     @NonNull
     @Override
     public Result doWork() {
+        long startTime = System.currentTimeMillis();
+        String id = getInputData().getString("video_id");
+        Log.i("LocalTube-Download", "[" + id + "] >>> Download Task Started");
+
         if (!NetworkManager.isOnline(getApplicationContext())) {
+            Log.w("LocalTube-Download", "[" + id + "] Device offline, retrying later");
             return Result.retry();
         }
         String url = getInputData().getString("video_url");
-        String id = getInputData().getString("video_id");
         String title = getInputData().getString("video_title");
         String selectedVideoFormat = getInputData().getString("selected_video_format");
         String selectedAudioFormat = getInputData().getString("selected_audio_format");
@@ -80,6 +84,7 @@ public class DownloadWorker extends Worker {
         String passedThumbnailUrl = getInputData().getString("thumbnail_url");
 
         if (url == null || id == null || title == null) {
+            Log.e("LocalTube-Download", "[" + id + "] Missing critical input data");
             return Result.failure(new Data.Builder().putString("error", "Missing input data").build());
         }
 
@@ -93,12 +98,22 @@ public class DownloadWorker extends Worker {
 
             ExecutorService parallelExecutor = Executors.newFixedThreadPool(2);
             try {
+                long extractionStart = System.currentTimeMillis();
                 List<VideoMetaData> metaData = YoutubeEngine.getVideoFormats(getApplicationContext(), url);
-                if (metaData == null || metaData.isEmpty()) return Result.failure();
+                Log.i("LocalTube-Download", "[" + id + "] Metadata extraction took: " + (System.currentTimeMillis() - extractionStart) + "ms");
+                
+                if (metaData == null || metaData.isEmpty()) {
+                    Log.e("LocalTube-Download", "[" + id + "] Extraction failed (null metadata)");
+                    return Result.failure();
+                }
 
                 List<FormatItem> formats = metaData.get(0).getFormats();
-                if (formats == null) return Result.failure();
+                if (formats == null) {
+                    Log.e("LocalTube-Download", "[" + id + "] Extraction failed (no formats)");
+                    return Result.failure();
+                }
 
+                long selectionStart = System.currentTimeMillis();
                 FormatItem bestVideo = null;
                 if (selectedVideoFormat != null) {
                     bestVideo = formats.stream().filter(f -> f.getFormatId().equals(selectedVideoFormat)).findFirst().orElse(null);
@@ -114,34 +129,8 @@ public class DownloadWorker extends Worker {
                 if (selectedAudioFormat != null) {
                     bestAudio = formats.stream().filter(f -> f.getFormatId().equals(selectedAudioFormat)).findFirst().orElse(null);
                 }
-                if (bestAudio == null && selectedVideoFormat == null) {
-                    if (isShort) {
-                        bestAudio = formats.stream()
-                                .filter(f -> f.isAudioOnly() && f.isDirectStream())
-                                .filter(f -> (f.getLanguage() != null && (f.getLanguage().toLowerCase().startsWith("en") || f.getLanguage().toLowerCase().contains("english"))) ||
-                                             (f.getFormatNote() != null && f.getFormatNote().toLowerCase().contains("english")))
-                                .max(Comparator.comparingDouble(FormatItem::getTbr))
-                                .orElse(null);
-
-                        if (bestAudio == null) {
-                            String defaultLang = ConfigManager.getString("default_language");
-                            if (defaultLang != null && !defaultLang.isEmpty()) {
-                                String langPrefix = defaultLang.toLowerCase();
-                                bestAudio = formats.stream()
-                                        .filter(f -> f.isAudioOnly() && f.isDirectStream())
-                                        .filter(f -> f.getLanguage() != null && f.getLanguage().toLowerCase().startsWith(langPrefix))
-                                        .max(Comparator.comparingDouble(FormatItem::getTbr))
-                                        .orElse(null);
-                            }
-                        }
-                    }
-
-                    if (bestAudio == null) {
-                        bestAudio = formats.stream()
-                                .filter(f -> f.isAudioOnly() && f.isDirectStream())
-                                .max(Comparator.comparingDouble(FormatItem::getTbr))
-                                .orElse(null);
-                    }
+                if (bestAudio == null) {
+                    bestAudio = YoutubeEngine.findBestAudio(formats);
                 }
 
                 if (bestVideo == null) {
@@ -149,8 +138,12 @@ public class DownloadWorker extends Worker {
                             .filter(f -> f.isCombined() && f.isDirectStream())
                             .max(Comparator.comparingInt(FormatItem::getHeight))
                             .orElse(null);
-                    if (bestVideo == null) return Result.failure();
+                    if (bestVideo == null) {
+                        Log.e("LocalTube-Download", "[" + id + "] No suitable video/combined formats found");
+                        return Result.failure();
+                    }
                 }
+                Log.i("LocalTube-Download", "[" + id + "] Format selection took: " + (System.currentTimeMillis() - selectionStart) + "ms");
 
                 String videoUrl = bestVideo.getUrl();
                 String audioUrl = bestAudio != null ? bestAudio.getUrl() : null;
@@ -175,32 +168,39 @@ public class DownloadWorker extends Worker {
                 data.isWatched = false;
 
                 final Map<String, String> headersMap = new java.util.HashMap<>();
-            final String fVideoUrl = videoUrl;
-            final String fAudioUrl = audioUrl;
+                final String fVideoUrl = videoUrl;
+                final String fAudioUrl = audioUrl;
 
-            long videoSizeMeta = bestVideo.getFilesize();
-            long audioSizeMeta = (bestAudio != null) ? bestAudio.getFilesize() : 0;
+                long sizeCheckStart = System.currentTimeMillis();
+                long videoSizeMeta = bestVideo.getFilesize();
+                long audioSizeMeta = (bestAudio != null) ? bestAudio.getFilesize() : 0;
 
-            CompletableFuture<Long> videoSizeFuture = videoSizeMeta == 0 ? CompletableFuture.supplyAsync(() -> fetchFileSize(fVideoUrl, headersMap)) : CompletableFuture.completedFuture(videoSizeMeta);
-            CompletableFuture<Long> audioSizeFuture = (audioSizeMeta == 0 && fAudioUrl != null) ? CompletableFuture.supplyAsync(() -> fetchFileSize(fAudioUrl, headersMap)) : CompletableFuture.completedFuture(audioSizeMeta);
-            CompletableFuture<Long> thumbSizeFuture = (!thumbnailUrl.isEmpty()) ? CompletableFuture.supplyAsync(() -> fetchFileSize(thumbnailUrl, null)) : CompletableFuture.completedFuture(0L);
+                CompletableFuture<Long> videoSizeFuture = videoSizeMeta == 0 ? CompletableFuture.supplyAsync(() -> fetchFileSize(fVideoUrl, headersMap)) : CompletableFuture.completedFuture(videoSizeMeta);
+                CompletableFuture<Long> audioSizeFuture = (audioSizeMeta == 0 && fAudioUrl != null) ? CompletableFuture.supplyAsync(() -> fetchFileSize(fAudioUrl, headersMap)) : CompletableFuture.completedFuture(audioSizeMeta);
+                CompletableFuture<Long> thumbSizeFuture = (!thumbnailUrl.isEmpty()) ? CompletableFuture.supplyAsync(() -> fetchFileSize(thumbnailUrl, null)) : CompletableFuture.completedFuture(0L);
 
-            long videoSize = videoSizeFuture.join();
-            long audioSize = audioSizeFuture.join();
-            long thumbSize = thumbSizeFuture.join();
+                long videoSize = videoSizeFuture.join();
+                long audioSize = audioSizeFuture.join();
+                long thumbSize = thumbSizeFuture.join();
+                Log.i("LocalTube-Download", "[" + id + "] File size verification took: " + (System.currentTimeMillis() - sizeCheckStart) + "ms. Total: " + (videoSize + audioSize) + " bytes");
 
                 totalDownloadSize = videoSize + audioSize + thumbSize;
                 totalBytesDownloaded.set(0);
 
+                long allocStart = System.currentTimeMillis();
                 if (videoSize > 0) preallocateFile(videoFile, videoSize);
                 if (audioFile != null && audioSize > 0) preallocateFile(audioFile, audioSize);
+                Log.i("LocalTube-Download", "[" + id + "] Pre-allocation took: " + (System.currentTimeMillis() - allocStart) + "ms");
 
                 List<CompletableFuture<Void>> tasks = new ArrayList<>();
                 final long fVideoSize = videoSize;
 
+                long downloadStart = System.currentTimeMillis();
                 tasks.add(CompletableFuture.runAsync(() -> {
                     try {
+                        long taskStart = System.currentTimeMillis();
                         downloadFileInChunks(fVideoUrl, videoFile, fVideoSize, headersMap);
+                        Log.i("LocalTube-Download", "[" + id + "] Video stream download took: " + (System.currentTimeMillis() - taskStart) + "ms");
                     } catch (IOException e) {
                         throw new RuntimeException(e);
                     }
@@ -211,7 +211,9 @@ public class DownloadWorker extends Worker {
                     final File fAudioFile = audioFile;
                     tasks.add(CompletableFuture.runAsync(() -> {
                         try {
+                            long taskStart = System.currentTimeMillis();
                             downloadFileInChunks(fAudioUrl, fAudioFile, fAudioSize, headersMap);
+                            Log.i("LocalTube-Download", "[" + id + "] Audio stream download took: " + (System.currentTimeMillis() - taskStart) + "ms");
                         } catch (IOException e) {
                             throw new RuntimeException(e);
                         }
@@ -219,25 +221,31 @@ public class DownloadWorker extends Worker {
                 }
 
                 CompletableFuture.allOf(tasks.toArray(new CompletableFuture[0])).join();
+                Log.i("LocalTube-Download", "[" + id + "] Full parallel download took: " + (System.currentTimeMillis() - downloadStart) + "ms");
 
+                long thumbStart = System.currentTimeMillis();
                 if (!thumbnailUrl.isEmpty()) downloadFileOkHttp(thumbnailUrl, thumbFile, null);
+                Log.i("LocalTube-Download", "[" + id + "] Thumbnail download took: " + (System.currentTimeMillis() - thumbStart) + "ms");
 
+                long dbStart = System.currentTimeMillis();
                 if (isShort) {
                     DownloadStore.addShort(getApplicationContext(), data);
                 } else {
                     DownloadStore.addDownload(getApplicationContext(), data);
                 }
+                Log.i("LocalTube-Download", "[" + id + "] DB storage took: " + (System.currentTimeMillis() - dbStart) + "ms");
 
                 if (getInputData().getBoolean("add_to_history", false)) {
                     YoutubeEngine.markWatched(getApplicationContext(), url);
                 }
 
+                Log.i("LocalTube-Download", "[" + id + "] <<< Download SUCCESS. Total worker time: " + (System.currentTimeMillis() - startTime) + "ms");
                 return Result.success();
             } finally {
                 parallelExecutor.shutdownNow();
             }
         } catch (Exception e) {
-            Log.e(TAG, "Download worker failed: " + e.getMessage(), e);
+            Log.e("LocalTube-Download", "[" + id + "] Download worker FAILED after " + (System.currentTimeMillis() - startTime) + "ms: " + e.getMessage(), e);
             return Result.failure(new Data.Builder().putString("error", e.getMessage()).build());
         }
     }
