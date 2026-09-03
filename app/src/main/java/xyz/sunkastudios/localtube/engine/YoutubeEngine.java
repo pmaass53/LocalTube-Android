@@ -40,6 +40,7 @@ public class YoutubeEngine {
     private static final Gson gson = new Gson();
     private static boolean initialized = false;
     private static final ExecutorService executorService = Executors.newCachedThreadPool();
+    private static final ExecutorService historyExecutor = Executors.newSingleThreadExecutor();
 
     public interface VideoStreamCallback {
         void onItemLoaded(VideoItem item);
@@ -49,6 +50,14 @@ public class YoutubeEngine {
 
     public static synchronized int init(Context context) {
         if (initialized) return 1;
+
+        // EAGER INIT: Start Node.js engine immediately in parallel
+        try {
+            NodeBridge.startNode(context.getApplicationContext());
+        } catch (Exception e) {
+            Log.e("YoutubeEngine", "Failed to start Node eagerly: " + e.getMessage());
+        }
+
         try {
             YoutubeDL.getInstance().init(context);
             FFmpeg.getInstance().init(context);
@@ -64,12 +73,6 @@ public class YoutubeEngine {
         } catch (Exception e) {
             Log.e("YoutubeDL", "Failed to update yt-dlp", e);
             return 2;
-        }
-        try {
-            NodeBridge.startNode(context.getApplicationContext());
-        } catch (Exception e) {
-            Log.d("YoutubeEngine", "startNode() threw error: " + e.getMessage());
-            return 0;
         }
         return 1;
     }
@@ -254,17 +257,22 @@ public class YoutubeEngine {
     }
 
     public static void markWatched(Context context, String videoUrl) {
-        if (!initialized) init(context);
-        File cookieFile = new File(context.getFilesDir(), "cookies.txt");
-        YoutubeDLRequest request = new YoutubeDLRequest(videoUrl);
-        request.addOption("--cookies", cookieFile.getAbsolutePath());
-        request.addOption("--mark-watched");
-        request.addOption("--skip-download");
-        try {
-            executeSafe(request);
-        } catch (Exception e) {
-            Log.e("YoutubeDL", "markWatched() error", e);
-        }
+        historyExecutor.execute(() -> {
+            if (!initialized) init(context);
+            File cookieFile = new File(context.getFilesDir(), "cookies.txt");
+            YoutubeDLRequest request = new YoutubeDLRequest(videoUrl);
+            request.addOption("--cookies", cookieFile.getAbsolutePath());
+            request.addOption("--mark-watched");
+            request.addOption("--skip-download");
+            request.addOption("--no-check-certificates");
+            try {
+                long start = System.currentTimeMillis();
+                executeSafe(request);
+                Log.d("LocalTube-Engine", "markWatched (async) took: " + (System.currentTimeMillis() - start) + "ms for " + videoUrl);
+            } catch (Exception e) {
+                Log.e("YoutubeDL", "markWatched() error", e);
+            }
+        });
     }
 
     public static YoutubeDLResponse executeSafe(YoutubeDLRequest request) throws Exception {

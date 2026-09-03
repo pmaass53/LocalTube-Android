@@ -77,17 +77,26 @@ public class NodeBridge {
                 Log.i(TAG, "Preparing Node.js environment...");
                 File nodeDir = new File(context.getFilesDir(), "nodejs-project");
                 
-                // Force recopy if we want to ensure latest assets are used
-                // In a production app, use version codes.
-                boolean forceRecopy = true;
+                // Optimized Asset Preparation: Only copy if app version changed or missing
+                android.content.pm.PackageInfo pInfo = context.getPackageManager().getPackageInfo(context.getPackageName(), 0);
+                long currentVersionCode;
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+                    currentVersionCode = pInfo.getLongVersionCode();
+                } else {
+                    currentVersionCode = pInfo.versionCode;
+                }
                 
-                if (forceRecopy || !nodeDir.exists()) {
-                    Log.i(TAG, "Copying nodejs-project assets...");
+                android.content.SharedPreferences prefs = context.getSharedPreferences("node_bridge", Context.MODE_PRIVATE);
+                long lastVersionCode = prefs.getLong("last_node_asset_version", -1);
+
+                if (currentVersionCode != lastVersionCode || !nodeDir.exists()) {
+                    Log.i(TAG, "New app version detected. Updating nodejs-project assets...");
                     if (nodeDir.exists()) deleteRecursive(nodeDir);
                     copyAssetFolder(context, "nodejs-project", nodeDir.getAbsolutePath());
-                    Log.i(TAG, "Assets copied successfully.");
+                    prefs.edit().putLong("last_node_asset_version", currentVersionCode).apply();
+                    Log.i(TAG, "Assets updated successfully.");
                 } else {
-                    Log.i(TAG, "nodejs-project already exists, skipping copy.");
+                    Log.i(TAG, "Node assets already up-to-date.");
                 }
 
                 String mainJsPath = new File(nodeDir, "main.js").getAbsolutePath();

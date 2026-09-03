@@ -115,24 +115,31 @@ public class DownloadWorker extends Worker {
 
                 long selectionStart = System.currentTimeMillis();
                 FormatItem bestVideo = null;
-                if (selectedVideoFormat != null) {
-                    bestVideo = formats.stream().filter(f -> f.getFormatId().equals(selectedVideoFormat)).findFirst().orElse(null);
-                }
-                if (bestVideo == null) {
-                    bestVideo = formats.stream()
-                            .filter(f -> f.isVideoOnly() && f.isDirectStream())
-                            .max(Comparator.comparingInt(FormatItem::getHeight))
-                            .orElse(null);
-                }
-
                 FormatItem bestAudio = null;
-                if (selectedAudioFormat != null) {
-                    bestAudio = formats.stream().filter(f -> f.getFormatId().equals(selectedAudioFormat)).findFirst().orElse(null);
-                }
-                if (bestAudio == null) {
-                    bestAudio = YoutubeEngine.findBestAudio(formats);
+                FormatItem selectedVideo = null;
+                FormatItem selectedAudio = null;
+                FormatItem bestVideoOnly = null;
+
+                // Single pass: find user-selected formats and best video-only stream
+                for (FormatItem format : formats) {
+                    String formatId = format.getFormatId();
+
+                    if (selectedVideoFormat != null && formatId.equals(selectedVideoFormat)) {
+                        selectedVideo = format;
+                    }
+                    if (selectedAudioFormat != null && formatId.equals(selectedAudioFormat)) {
+                        selectedAudio = format;
+                    }
+                    if (format.isVideoOnly() && format.isDirectStream() &&
+                        (bestVideoOnly == null || format.getHeight() > bestVideoOnly.getHeight())) {
+                        bestVideoOnly = format;
+                    }
                 }
 
+                bestVideo = (selectedVideo != null) ? selectedVideo : bestVideoOnly;
+                bestAudio = (selectedAudio != null) ? selectedAudio : YoutubeEngine.findBestAudio(formats);
+
+                // Fallback to combined streams if no video-only found
                 if (bestVideo == null) {
                     bestVideo = formats.stream()
                             .filter(f -> f.isCombined() && f.isDirectStream())
@@ -237,6 +244,7 @@ public class DownloadWorker extends Worker {
 
                 if (getInputData().getBoolean("add_to_history", false)) {
                     YoutubeEngine.markWatched(getApplicationContext(), url);
+                    Log.i("LocalTube-Download", "[" + id + "] History update queued in background");
                 }
 
                 Log.i("LocalTube-Download", "[" + id + "] <<< Download SUCCESS. Total worker time: " + (System.currentTimeMillis() - startTime) + "ms");

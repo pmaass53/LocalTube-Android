@@ -10,7 +10,7 @@ import xyz.sunkastudios.localtube.VideoItem;
 
 public class PythonEngine {
     private static final Gson gson = new Gson();
-    
+
     public static PyObject getModule(String moduleName) {
         Python py = Python.getInstance();
         return py.getModule(moduleName);
